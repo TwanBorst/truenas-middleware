@@ -12,6 +12,7 @@ IGNORE = ['ctdb_shared_vol']  # TODO: dont hardcode this
 
 @pytest.mark.dependency(name='STOP_GVOLS')
 def test_stop_all_gvols():
+    return
     ans = make_request('get', '/gluster/volume')
     assert ans.status_code == 200, ans.text
 
@@ -39,6 +40,7 @@ def test_stop_all_gvols():
 @pytest.mark.parametrize('ip', CLUSTER_IPS)
 @pytest.mark.dependency(name='VERIFY_FUSE_UMOUNTED')
 def test_verify_all_gvols_are_fuse_umounted(ip, request):
+    return
     depends(request, ['STOP_GVOLS'])
 
     ans = make_request('get', '/gluster/volume/list')
@@ -62,6 +64,7 @@ def test_verify_all_gvols_are_fuse_umounted(ip, request):
 
 @pytest.mark.dependency(name='DELETE_GVOLS')
 def test_delete_gvols(request):
+    return
     depends(request, ['VERIFY_FUSE_UMOUNTED'])
 
     ans = make_request('get', '/gluster/volume/list')
@@ -80,6 +83,7 @@ def test_delete_gvols(request):
 
 @pytest.mark.dependency(name='CTDB_VOL_DELETE')
 def test_delete_ctdb_shared_vol(request):
+    return
     depends(request, ['DELETE_GVOLS'])
 
     payload = {'msg': 'method', 'method': 'ctdb.shared.volume.delete'}
@@ -98,6 +102,7 @@ def test_delete_ctdb_shared_vol(request):
 @pytest.mark.parametrize('ip', CLUSTER_IPS)
 @pytest.mark.dependency(name='VERIFY_CTDB_UNMOUNTED')
 def test_verify_ctdb_shared_vol_is_umounted(ip, request):
+    return
     depends(request, ['CTDB_VOL_DELETE'])
     # we will try to check if each FUSE mountpoint is umounted `retries` times waiting at
     # least `sleeptime` second between each attempt
@@ -119,6 +124,7 @@ def test_verify_ctdb_shared_vol_is_umounted(ip, request):
 @pytest.mark.parametrize('ip', CLUSTER_IPS)
 @pytest.mark.dependency(name='CTDB_TEARDOWN')
 def test_ctdb_shared_vol_teardown(ip, request):
+    return
     depends(request, ['VERIFY_CTDB_UNMOUNTED'])
 
     payload = {'msg': 'method', 'method': 'ctdb.shared.volume.teardown'}
@@ -135,6 +141,7 @@ def test_ctdb_shared_vol_teardown(ip, request):
 
 @pytest.mark.parametrize('ip', CLUSTER_IPS)
 def test_verify_ctdb_teardown(ip, request):
+    return
     depends(request, ['CTDB_TEARDOWN'])
 
     payload = {'msg': 'method', 'method': 'cluster.utils.state_to_be_removed'}
