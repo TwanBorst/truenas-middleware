@@ -1,5 +1,6 @@
 import errno
 import os
+import stat
 
 from base64 import b64encode, b64decode
 from middlewared.schema import accepts, Bool, Dict, Int, List, Str, Ref
@@ -540,3 +541,41 @@ class GlusterFilesystemService(Service):
 
             if attrs:
                 entry.handle.setattrs(**attrs)
+
+    @accepts(Dict(
+        'glfs-copy',
+        Str('src_volume_name', required=True),
+        Str('src_uuid', required=True, validators=[UUID()]),
+        Str('dst_volume_name', required=True),
+        Str('dst_uuid', required=True, validators=[UUID()]),
+        Ref('gluster-volume-options')
+    ))
+    @job()
+    def copy_tree(self, job, data):
+        src_vol = glfs.init_volume_mount(data['src_volume_name'], data['gluster-volume-options'])
+        dst_vol = glfs.init_volume_mount(data['dst_volume_name'], data['gluster-volume-options'])
+
+        src_hdl = self.get_object_handle(src_vol, data['src_uuid'])
+        dst_hdl = self.get_object_handle(dst_vol, data['dst_uuid'])
+
+        dst_hdl_lst = [dst_hdl]
+
+        if src_hdl.file_type['parsed'] != 'DIRECTORY':
+            raise CallError('Source of copy is not a directory')
+
+        if dst_hdl.file_type['parsed'] != 'DIRECTORY':
+            raise CallError('Destination of copy is not a directory')
+
+        for idx, entry in enumerate(src_hdl.fts_open()):
+            # fts entry depth starts at zero
+            while entry.depth < len(dst_hdl_lst) - 1:
+                dst_hdl_lst.pop()
+
+            new_mode = stat.S_IMODE(entry.handle.cached_stat.st_mode)
+            dst = dst_hdl_lst[-1]
+
+            if entry.file_type == 'DIRECTORY':
+                dst_hdl_lst.append(dst.mkdir(entry.name, mode=new_mode))
+            elif entry.file_type == 'FILE':
+                hdl = dst.create(entry.name, os.O_RDWR, mode=new_mode)
+                hdl.open(os.O_RDWR).pwrite(entry.handle.contents(), 0)

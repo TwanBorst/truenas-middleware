@@ -11,8 +11,8 @@ class ClusterEventsApplication(object):
         self.middleware = middleware
 
     async def process_event(self, data):
-        event = data.get('event', None)
-        name = data.get('name', None)
+        event = data.pop('event', None)
+        name = data.pop('name', None)
         method = None
 
         if event is not None and name is not None:
@@ -28,14 +28,18 @@ class ClusterEventsApplication(object):
                 method = ('service.stop', 'cifs')
             elif event == 'CLJOBS_PROCESS':
                 method = 'clusterjob.process_queue'
+            elif event == 'SYSTEM_VOL_CHANGE':
+                method = 'ctdb.shared.volume.update'
 
             if method is not None:
-                if event.startswith('VOLUME'):
+                if event.startswith(('VOLUME', 'METADATA')):
                     await self.middleware.call(method, {'name': name})
                 elif event.startswith(('CTDB', 'SMB')):
                     await self.middleware.call(method[0], method[1])
                 elif event == 'CLJOBS_PROCESS':
                     await self.middleware.call(method)
+                elif event == 'SYSTEM_VOL_CHANGE':
+                    await self.middleware.call(method, {'name': name, 'uuid': data['uuid']})
 
                 if data.pop('forward', False):
                     # means the request originated from localhost

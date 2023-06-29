@@ -8,7 +8,7 @@ from .utils import GlusterConfig, set_gluster_workdir_dataset, get_gluster_workd
 
 
 GLUSTER_JOB_LOCK = GlusterConfig.CLI_LOCK.value
-CTDB_VOL_NAME = CTDBConfig.CTDB_VOL_NAME.value
+LEGACY_CTDB_VOL_NAME = CTDBConfig.LEGACY_CTDB_VOL_NAME.value
 FUSE_BASE = FuseConfig.FUSE_PATH_BASE.value
 
 
@@ -70,7 +70,7 @@ class GlusterVolumeService(CRUDService):
         verrors = ValidationErrors()
         create_request = schema_name == 'glustervolume_create'
 
-        if data['name'] == CTDB_VOL_NAME and create_request:
+        if data['name'] == LEGACY_CTDB_VOL_NAME and create_request:
             verrors.add(
                 f'{schema_name}.{data["name"]}',
                 f'"{data["name"]}" is a reserved name. Choose a different volume name.'
@@ -220,8 +220,13 @@ class GlusterVolumeService(CRUDService):
         """
 
         args = {'args': ((await self.get_instance(id))['name'],)}
+        try:
+            meta_config = await self.middleware.call('ctdb.shared.volume.metadata_config')
+        except Exception:
+            self.logger.debug("Failed to retrieve metadata volume", exc_info=True)
+            meta_config = {'volume': None}
 
-        if id == CTDB_VOL_NAME:
+        if id == meta_config['volume']:
             # if the ctdb shared volume is being deleted then call
             # the ctdb shared volume specific API since it handles
             # other items

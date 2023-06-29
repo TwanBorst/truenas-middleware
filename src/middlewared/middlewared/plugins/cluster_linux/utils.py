@@ -244,10 +244,9 @@ class CTDBConfig(enum.Enum):
     GENERAL_FILE = 'ctdb.conf'
 
     # local gluster fuse client mount related config
-    LOCAL_MOUNT_BASE = FuseConfig.FUSE_PATH_BASE.value
-    CTDB_VOL_NAME = 'ctdb_shared_vol'
+    LEGACY_CTDB_VOL_NAME = 'ctdb_shared_vol'
     CTDB_VOL_INFO_FILE = f'{MIDDLEWARE_RUN_DIR}/ctdb_vol_info'
-    CTDB_LOCAL_MOUNT = os.path.join(LOCAL_MOUNT_BASE, CTDB_VOL_NAME)
+    CTDB_STATE_DIR = '.clustered_system'
 
     CLUSTERED_SERVICES = '.clustered_services'
 

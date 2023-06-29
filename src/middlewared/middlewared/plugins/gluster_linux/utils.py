@@ -49,8 +49,11 @@ class GlusterConfig(enum.Enum):
 
     UUID_BACKUP = '/data/.glusterd_uuid'
 
+    METADATA_VOLUME = '/data/.cluster_metadata_vol'
+
     FILES_TO_REMOVE = [
         WORKDIR_DS_CACHE,
+        METADATA_VOLUME,
         UUID_BACKUP
     ]
 
@@ -73,10 +76,16 @@ def set_gluster_workdir_dataset(dataset_name):
         f.write(dataset_name)
 
 
+def get_glusterd_uuid():
+    with open(f'{GlusterConfig.WORKDIR.value}/glusterd.info', 'r') as f:
+        current_uuid = f.readline()
+
+    return current_uuid
+
+
 def check_glusterd_info():
     try:
-        with open(f'{GlusterConfig.WORKDIR.value}/glusterd.info', 'r') as f:
-            current_uuid = f.readline()
+        current_uuid = get_glusterd_uuid()
     except FileNotFoundError:
         if not os.path.exists(GlusterConfig.UUID_BACKUP.value):
             # Glusterd is most likely starting for the first time.

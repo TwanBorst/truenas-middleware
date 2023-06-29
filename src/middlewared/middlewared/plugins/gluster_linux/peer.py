@@ -9,7 +9,6 @@ from middlewared.plugins.cluster_linux.utils import CTDBConfig
 from .utils import GlusterConfig
 
 
-CTDB_VOL = CTDBConfig.CTDB_VOL_NAME.value
 GLUSTER_JOB_LOCK = GlusterConfig.CLI_LOCK.value
 MAX_PEERS = GlusterConfig.MAX_PEERS.value
 
@@ -75,7 +74,14 @@ class GlusterPeerService(CRUDService):
         # this time since it requires expanding the ctdb_shared_vol. This is an
         # involved process and will require proper design/implementation.
         verrors = ValidationErrors()
-        if (await self.middleware.call('gluster.volume.exists_and_started', CTDB_VOL))['exists']:
+        try:
+            vol = (await self.middleware.call('ctdb.shared.volume.get_vol_and_path'))['volume']
+        except CallError as e:
+            if e.errno != errno.ENOENT:
+                raise
+            vol = None
+
+        if vol and (await self.middleware.call('gluster.volume.exists_and_started', vol))['exists']:
             verbiage = 'Adding to' if schema == 'gluster.peer.create' else 'Removing from'
             verrors.add(schema, f'{verbiage} an existing trusted storage pool is not allowed at this time.')
 
