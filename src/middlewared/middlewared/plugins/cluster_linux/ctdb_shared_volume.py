@@ -5,13 +5,15 @@ from glustercli.cli import volume
 
 from middlewared.service import Service, CallError, job
 from middlewared.plugins.cluster_linux.utils import CTDBConfig
+from middlewared.plugins.gluster_linux.utils import GlusterConfig
 
 
 MOUNT_UMOUNT_LOCK = CTDBConfig.MOUNT_UMOUNT_LOCK.value
 CRE_OR_DEL_LOCK = CTDBConfig.CRE_OR_DEL_LOCK.value
-CTDB_VOL_NAME = CTDBConfig.CTDB_VOL_NAME.value
+LEGACY_CTDB_VOL_NAME = CTDBConfig.CTDB_VOL_NAME.value
 CTDB_LOCAL_MOUNT = CTDBConfig.CTDB_LOCAL_MOUNT.value
 CTDB_VOL_INFO_FILE = CTDBConfig.CTDB_VOL_INFO_FILE.value
+METADATA_VOL_FILE = GlusterConfig.METADATA_VOLUME.value
 
 
 class CtdbSharedVolumeService(Service):
@@ -20,12 +22,60 @@ class CtdbSharedVolumeService(Service):
         namespace = 'ctdb.shared.volume'
         private = True
 
+    def get_metadata_config(self):
+        try:
+            with open(METADATA_VOL_FILE, 'r') as f:
+                vol_name = f.read()
+
+            return {
+                'volume': vol,
+                'metadata_dir': '.truenas_metadata'
+            }
+        except FileNotFoundError:
+            pass
+
+        vol_names = [x['name'] for x in self.middleware.call_sync('gluster.volume.list')]
+        if LEGACY_CTDB_VOL_NAME in vol_names:
+            try:
+                self.middleware.call_sync('gluster.filesystem.lookup', {
+                    'volume_name': LEGACY_CTDB_VOL_NAME,
+                    'path': '.DEPRECATED' 
+                })
+            except Exception:
+                self.logger.debug("failed to look up sentinel", exc_info=True)
+                return {
+                    'volume': LEGACY_CTDB_VOL_NAME,
+                    'metadata_dir': '/'
+                }
+
+        for vol in vol_names:
+            if vol == LEGACY_CTDB_VOL_NAME:
+                continue
+
+            try:
+                self.middleware.call_sync('gluster.filesystem.lookup', {
+                    'volume_name': vol,
+                    'path': '.truenas_metadata' 
+                })
+            except Exception:
+                self.logger.debug("no metadata dir on %s", vol, exc_info=True) 
+                continue
+
+            return {
+                'volume': vol,
+                'metadata_dir': '.truenas_metadata'
+            }
+
+        raise CallError("No metadata dir configured")
+
     def generate_info(self):
-        volume = CTDB_VOL_NAME
+        conf = self.get_metdata_config()
+
+        volume = conf['volume'] 
         volume_mp = Path(CTDBConfig.LOCAL_MOUNT_BASE.value, volume)
-        metadata_dir = '/'
+        metadata_dir = conf['metadata_dir'] 
         glfs_uuid = self.middleware.call_sync('gluster.filesystem.lookup', {
-            'volume_name': CTDB_VOL_NAME,
+            'volume_name': volume,
             'path': metadata_dir
         })['uuid']
         data = {
@@ -35,9 +85,10 @@ class CtdbSharedVolumeService(Service):
             'mountpoint': str(Path(f'{volume_mp}/{metadata_dir}')),
             'uuid': glfs_uuid
         }
-        with open(CTDB_VOL_INFO_FILE, "w") as f:
+        with open(f'{CTDB_VOL_INFO_FILE}.tmp', "w") as f:
             f.write(json.dumps(data))
 
+        os.rename(f'{CTDB_VOL_INFO_FILE}.tmp', CTDB_VOL_INFO_FILE)
         return data
 
     def config(self):
@@ -48,7 +99,36 @@ class CtdbSharedVolumeService(Service):
             return self.generate_info()
 
     def update(self, data):
-        raise CallError('Updates to ctdb shared volume configuration are not supported', errno.EOPNOTSUPP)
+        info = self.middleware.call_sync('gluster.volume.exists_and_started', data['name'])
+        if not info['exists']:
+            raise CallError(
+                f'{data["name"]}: volume does not exist', errno.ENOENT 
+            )
+
+        if not info['started']:
+            self.middleware.call_sync('gluster.volume.start', {'name': data['name']})
+
+        if self.middleware.call_sync('service.started', 'ctdb'):
+            raise CallError(
+                'Updates to TrueNAS clustered metadata volume are not '
+                'permitted when the ctdb service is started'
+            )
+
+        with open(f'{METADATA_VOL_FILE}.tmp', 'w') as f:
+            vol_name = f.write(data['name'])
+            f.flush()
+            os.fsync(f.fileno())
+
+        os.rename(f'{METADATA_VOL_FILE}.tmp', METADATA_VOL_FILE)
+        return self.generate_info()
+
+    @job(lock=CRE_OR_DEL_LOCK)
+    def migrate(self, job, data):
+        /* prior to migration must stop ctdb daemon */
+        data = {'event': 'CTDB_STOP', 'name': CTDB_VOL_NAME, 'forward': True}
+        self.middleware.call_sync('gluster.localevents.send', data)
+
+
 
     async def validate(self):
         filters = [('id', '=', CTDB_VOL_NAME)]

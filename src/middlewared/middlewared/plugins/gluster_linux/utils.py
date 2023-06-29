@@ -49,8 +49,11 @@ class GlusterConfig(enum.Enum):
 
     UUID_BACKUP = '/data/.glusterd_uuid'
 
+    METADATA_VOLUME = '/data/.cluster_metadata_vol'
+
     FILES_TO_REMOVE = [
         WORKDIR_DS_CACHE,
+        METADATA_VOLUME,
         UUID_BACKUP
     ]
 

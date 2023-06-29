@@ -28,9 +28,11 @@ class ClusterEventsApplication(object):
                 method = ('service.stop', 'cifs')
             elif event == 'CLJOBS_PROCESS':
                 method = 'clusterjob.process_queue'
+            elif event == 'METADATA_VOL_CHANGE':
+                method = 'ctdb.shared.volume.update'
 
             if method is not None:
-                if event.startswith('VOLUME'):
+                if event.startswith(('VOLUME', 'METADATA')):
                     await self.middleware.call(method, {'name': name})
                 elif event.startswith(('CTDB', 'SMB')):
                     await self.middleware.call(method[0], method[1])
