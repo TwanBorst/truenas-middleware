@@ -2,7 +2,7 @@ import errno
 import json
 from pathlib import Path
 from glustercli.cli import volume
-from pyglf import GLFSError
+from pyglfs import GLFSError
 from time import sleep
 
 from middlewared.service import Service, CallError, job
