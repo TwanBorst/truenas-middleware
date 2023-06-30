@@ -7,8 +7,6 @@ from middlewared.plugins.cluster_linux.utils import CTDBConfig
 from middlewared.plugins.gluster_linux.utils import check_glusterd_info
 from middlewared.service_exception import CallError
 
-CTDB_VOL = CTDBConfig.CTDB_VOL_NAME.value
-
 
 class GlusterdService(SimpleService):
 
@@ -20,7 +18,9 @@ class GlusterdService(SimpleService):
     async def after_start(self):
         mount_job = await self.middleware.call('gluster.fuse.mount', {'all': True})
         await mount_job.wait()
-        if await self.middleware.call('gluster.fuse.is_mounted', {'name': CTDB_VOL}):
+
+        ctdb_vol = (await self.middleware.call('ctdb.shared.volume.config'))['volume_name']
+        if await self.middleware.call('gluster.fuse.is_mounted', {'name': ctdb_vol}):
             await self.middleware.call('service.start', 'ctdb')
 
     async def after_restart(self):
