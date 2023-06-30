@@ -567,7 +567,7 @@ class GlusterFilesystemService(Service):
             raise CallError('Destination of copy is not a directory')
 
         for idx, entry in enumerate(src_hdl.fts_open()):
-            while entry.depth < len(dst_hdl_lst)
+            while entry.depth < len(dst_hdl_lst):
                 dst_hdl_lst.pop()
 
             new_mode = stat.S_IMODE(entry.handle.cached_stat.st_mode)

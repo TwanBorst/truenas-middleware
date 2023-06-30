@@ -13,7 +13,6 @@ from middlewared.plugins.gluster_linux.utils import GlusterConfig, get_glusterd_
 MOUNT_UMOUNT_LOCK = CTDBConfig.MOUNT_UMOUNT_LOCK.value
 CRE_OR_DEL_LOCK = CTDBConfig.CRE_OR_DEL_LOCK.value
 LEGACY_CTDB_VOL_NAME = CTDBConfig.LEGACY_CTDB_VOL_NAME.value
-CTDB_LOCAL_MOUNT = CTDBConfig.CTDB_LOCAL_MOUNT.value
 CTDB_VOL_INFO_FILE = CTDBConfig.CTDB_VOL_INFO_FILE.value
 METADATA_VOL_FILE = GlusterConfig.METADATA_VOLUME.value
 CTDB_STATE_DIR = CTDBConfig.CTDB_STATE_DIR.value
@@ -248,7 +247,7 @@ class CtdbSharedVolumeService(Service):
         })
 
         for file in contents:
-            if file.endswith('_UPDATE_IN_PROGRESS')
+            if file.endswith('_UPDATE_IN_PROGRESS'):
                 peer_uuid = file_name.strip('_UPDATE_IN_PROGRESS')
                 raise CallError(
                     f'{peer_uuid[1:]}: Gluster peer currently in process '
