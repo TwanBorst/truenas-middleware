@@ -8,7 +8,7 @@ from time import sleep
 from uuid import uuid4
 
 from middlewared.service import Service, CallError, job
-from middlewared.plugins.cluster_linux.utils import CTDBConfig
+from middlewared.plugins.cluster_linux.utils import CTDBConfig, FuseConfig
 from middlewared.plugins.gluster_linux.utils import GlusterConfig, get_glusterd_uuid
 
 
@@ -100,7 +100,7 @@ class CtdbSharedVolumeService(Service):
         conf = self.get_vol_and_path()
 
         volume = conf['volume']
-        volume_mp = Path(CTDBConfig.LOCAL_MOUNT_BASE.value, volume)
+        volume_mp = Path(FuseConfig.FUSE_PATH_BASE.value, volume)
         system_dir = conf['system_dir']
         glfs_uuid = self.middleware.call_sync('gluster.filesystem.lookup', {
             'volume_name': volume,
