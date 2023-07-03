@@ -27,22 +27,14 @@ class CtdbSharedVolumeService(Service):
         namespace = 'ctdb.shared.volume'
         private = True
 
-    def get_vol_and_path(self):
-        try:
-            with open(METADATA_VOL_FILE, 'r') as f:
-                data = json.loads(f.read())
-
-            return data
-        except FileNotFoundError:
-            pass
-
+    def __get_vol_and_path(self):
         vol_names = self.middleware.call_sync('gluster.volume.list')
         if LEGACY_CTDB_VOL_NAME in vol_names:
             try:
-                self.middleware.call_sync('gluster.filesystem.lookup', {
+                uuid = self.middleware.call_sync('gluster.filesystem.lookup', {
                     'volume_name': LEGACY_CTDB_VOL_NAME,
                     'path': '.DEPRECATED'
-                })
+                })['uuid']
             except GLFSError as e:
                 if e.errno != errno.ENOENT:
                     raise CallError(
@@ -50,29 +42,22 @@ class CtdbSharedVolumeService(Service):
                         f'shared volume: {e.errmsg}', e.errno
                     )
 
-                data = {
+                # root of glusterfs volume always has uuid of 1
+                return {
                     'volume': LEGACY_CTDB_VOL_NAME,
-                    'system_dir': '/'
+                    'system_dir': '/',
+                    'uuid': '00000000-0000-0000-0000-000000000001' 
                 }
-
-                tmp_name = f'{METADATA_VOL_FILE}_{uuid4().hex}.tmp'
-                with open(tmp_name, 'w') as f:
-                    f.write(json.dumps(data))
-                    f.flush()
-                    os.fsync(f.fileno())
-
-                os.rename(tmp_name, METADATA_VOL_FILE)
-                return data
 
         for vol in vol_names:
             if vol == LEGACY_CTDB_VOL_NAME:
                 continue
 
             try:
-                self.middleware.call_sync('gluster.filesystem.lookup', {
+                uuid = self.middleware.call_sync('gluster.filesystem.lookup', {
                     'volume_name': vol,
                     'path': CTDB_STATE_DIR
-                })
+                })['uuid']
             except GLFSError as e:
                 if e.errno != errno.ENOENT:
                     raise CallError(
@@ -82,36 +67,26 @@ class CtdbSharedVolumeService(Service):
 
                 continue
 
-            data = {
+            return {
                 'volume': vol,
-                'system_dir': CTDB_STATE_DIR
+                'system_dir': CTDB_STATE_DIR,
+                'uuid': uuid
             }
-            tmp_name = f'{METADATA_VOL_FILE}_{uuid4().hex}.tmp'
-            with open(tmp_name, 'w') as f:
-                f.write(json.dumps(data))
-                f.flush()
-                os.fsync(f.fileno())
-
-            return data
 
         raise CallError("No metadata dir configured", errno.ENOENT)
 
     def generate_info(self):
-        conf = self.get_vol_and_path()
+        conf = self.__get_vol_and_path()
 
         volume = conf['volume']
         volume_mp = Path(FuseConfig.FUSE_PATH_BASE.value, volume)
         system_dir = conf['system_dir']
-        glfs_uuid = self.middleware.call_sync('gluster.filesystem.lookup', {
-            'volume_name': volume,
-            'path': system_dir
-        })['uuid']
         data = {
             'volume_name': volume,
             'volume_mountpoint': str(volume_mp),
             'path': system_dir,
             'mountpoint': str(Path(f'{volume_mp}/{system_dir}')),
-            'uuid': glfs_uuid
+            'uuid': conf['uuid'] 
         }
 
         tmp_name = f'{CTDB_VOL_INFO_FILE}_{uuid4().hex}.tmp'
@@ -153,6 +128,7 @@ class CtdbSharedVolumeService(Service):
                 'permitted when the ctdb service is started'
             )
 
+        """
         tmp_name = f'{METADATA_VOL_FILE}_{uuid4().hex}.tmp'
         with open(tmp_name, 'w') as f:
             f.write(volume)
@@ -161,6 +137,7 @@ class CtdbSharedVolumeService(Service):
 
         os.rename(tmp_name, METADATA_VOL_FILE)
         gluster_uuid = get_glusterd_uuid()
+        """
 
         try:
             self.middleware.call_sync('gluster.filesystem.unlink', {
@@ -176,20 +153,20 @@ class CtdbSharedVolumeService(Service):
     def __move_ctdb_vol(self, data):
         # do not call this method directly
         try:
-            current = self.get_vol_and_path()
+            current = self.config()
         except CallError as e:
             if e.errno != errno.ENOENT:
                 raise
 
             self.logger.debug("Failed to detect metadata dir.", exc_info=True)
-            current = {'volume': None}
+            current = {'volume_name': None}
 
         # If we're not moving the location, just make sure our vol file
         # is present
-        if current['volume'] == data['name']:
+        if current['volume_name'] == data['name']:
             try:
                 hdl = self.middleware.call_sync('gluster.filesystem.lookup', {
-                    'volume_name': current['volume'],
+                    'volume_name': current['volume_name'],
                     'path': current['system_dir']
                 })
             except GLFError as e:
@@ -197,7 +174,7 @@ class CtdbSharedVolumeService(Service):
                     raise CallError(
                         'Failed to lookup truenas cluster state dir '
                         f'[{current["system_dir"]}] on volume '
-                        f'[{current["volume"]}]: {e.errmsg}', e.errno
+                        f'[{current["volume_name"]}]: {e.errmsg}', e.errno
                     )
 
                 hdl = self.middleware.call_sync('gluster.filesystem.mkdir', {
@@ -205,9 +182,10 @@ class CtdbSharedVolumeService(Service):
                     'path': current['system_dir'],
                     'options': {'mode': 0o700}
                 })
+
             return hdl['uuid']
 
-        elif current['volume'] is None:
+        elif current['volume_name'] is None:
             hdl = self.middleware.call_sync('gluster.filesystem.mkdir', {
                'volume_name': data['name'],
                'path': CTDB_STATE_DIR,
@@ -216,7 +194,7 @@ class CtdbSharedVolumeService(Service):
             return hdl['uuid']
 
         src_uuid = self.middleware.call_sync('gluster.filesystem.lookup', {
-            'volume_name': current['volume'],
+            'volume_name': current['volume_name'],
             'path': current['system_dir']
         })['uuid']
 
@@ -236,7 +214,7 @@ class CtdbSharedVolumeService(Service):
             })['uuid']
 
         move_job = self.middleware.call_sync('gluster.filesystem.copy_tree', {
-            'src_volume_name': current['volume'],
+            'src_volume_name': current['volume_name'],
             'src_uuid': src_uuid,
             'dst_volume_name': data['name'],
             'dst_uuid': dst_uuid,
@@ -244,14 +222,14 @@ class CtdbSharedVolumeService(Service):
         move_job.wait_sync(raise_error=True)
 
         rmtree_job = self.middleware.call_sync('gluster.filesystem.rmtree', {
-            'volume_name': current['volume'],
+            'volume_name': current['volume_name'],
             'path': current['system_dir']
         })
         rmtree_job.wait_sync()
 
         if current['volume'] == LEGACY_CTDB_VOL_NAME:
             self.middleware.call_sync('gluster.filesystem.create_file', {
-                'volume_name': current['volume'],
+                'volume_name': current['volume_name'],
                 'path': '.DEPRECATED',
                 'options': {'mode': 0o700}
             })
@@ -267,15 +245,11 @@ class CtdbSharedVolumeService(Service):
                 'CTDB volume configuration may only be initiated with healthy cluster'
             )
 
-        cur_info = self.get_vol_and_path()
+        cur_info = self.config()
         job.set_progress(10, f'Begining migration of cluster system config from {cur_info["volume"]} to {data["name"]}')
-        system_dir = self.middleware.call_sync('gluster.filesystem.lookup', {
-            'volume_name': cur_info['volume'],
-            'path': cur_info['system_dir']
-        })
         contents = self.middleware.call_sync('gluster.filesystem.contents', {
             'volume_name': cur_info['volume'],
-            'uuid': system_dir['uuid'],
+            'uuid': cur_info['uuid'],
         })
 
         for file in contents:
@@ -384,8 +358,8 @@ class CtdbSharedVolumeService(Service):
         Create and mount the shared volume to be used
         by ctdb daemon.
         """
-        meta_config = await self.middleware.call('ctdb.shared.volume.get_vol_and_path')
-        vol = meta_config['volume']
+        meta_config = await self.middleware.call('ctdb.shared.volume.config')
+        vol = meta_config['volume_name']
         info = await self.middleware.call('gluster.volume.exists_and_started', meta_config['volume'])
 
         # make sure the shared volume is configured properly to prevent
@@ -470,12 +444,13 @@ class CtdbSharedVolumeService(Service):
 
         NOTE: THERE IS NO COMING BACK FROM THIS.
         """
+        config = await self.middleawre.call('ctdb.shared.volume.config')
         if not force:
             for vol in await self.middleware.call('gluster.volume.query'):
-                if vol['name'] != CTDB_VOL_NAME:
+                if vol['name'] != config['volume_name']:
                     # If someone calls this method, we expect that all other gluster volumes
                     # have been destroyed
-                    raise CallError(f'{vol["name"]!r} must be removed before deleting {CTDB_VOL_NAME!r}')
+                    raise CallError(f'{vol["name"]!r} must be removed before deleting {config["volume_name"]!r}')
         else:
             # we have to stop gluster service because it spawns a bunch of child processes
             # for the ctdb shared volume. This also stops ctdb, smb and unmounts all the

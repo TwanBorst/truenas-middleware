@@ -13,7 +13,6 @@ from middlewared.schema import Bool, returns
 from middlewared.service import (Service, ValidationErrors, accepts, job,
                                  private)
 from middlewared.service_exception import CallError
-from middlewared.utils import MIDDLEWARE_RUN_DIR
 from middlewared.utils.path import CLUSTER_PATH_PREFIX
 
 
@@ -245,7 +244,7 @@ class CTDBConfig(enum.Enum):
 
     # local gluster fuse client mount related config
     LEGACY_CTDB_VOL_NAME = 'ctdb_shared_vol'
-    CTDB_VOL_INFO_FILE = f'{MIDDLEWARE_RUN_DIR}/ctdb_vol_info'
+    CTDB_VOL_INFO_FILE = '/data/ctdb_vol_info'
     CTDB_STATE_DIR = '.clustered_system'
 
     CLUSTERED_SERVICES = '.clustered_services'
